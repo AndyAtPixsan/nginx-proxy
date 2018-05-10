@@ -20,7 +20,7 @@
 			server 127.0.0.1 down;
 		{{ end }}
 	{{ end }}
-	
+
 {{ end }}
 
 {{ define "location" }}
@@ -33,7 +33,7 @@
 		include fastcgi.conf;
 		fastcgi_pass {{ trim .Upstream }};
 	{{ else }}
-		{{ $pathDest := trim (or (.PathDest) "/") }}  
+		{{ $pathDest := trim (or (.PathDest) "/") }}
 		proxy_pass {{ trim .Proto }}://{{ trim .Upstream }}{{$pathDest}};
 	{{ end }}
 
@@ -42,17 +42,28 @@
 		auth_basic_user_file	{{ (printf "/etc/nginx/htpasswd/%s" .Host) }};
 	{{ end }}
 
-	{{ if (exists (printf "/etc/nginx/vhost.d/%s_location" .Host)) }}
-		include {{ printf "/etc/nginx/vhost.d/%s_location" .Host}};
-	{{ else if (exists "/etc/nginx/vhost.d/default_location") }}
-		include /etc/nginx/vhost.d/default_location;
+	# Include approriate _location file if present.
+	{{ if eq .Path "" }}
+		{{ if (exists (printf "/etc/nginx/vhost.d/%s_location" .Host)) }}
+			include {{ printf "/etc/nginx/vhost.d/%s_location" .Host}};
+		{{ else if (exists "/etc/nginx/vhost.d/default_location") }}
+			include /etc/nginx/vhost.d/default_location;
+		{{ end }}
+	{{ else }}
+		# VIRTUAL_PATH is set so look for the _location with the host and path name.
+		{{ $trimmed_path := trim .Path "/"}}
+		{{ if (exists (printf "/etc/nginx/vhost.d/%s_%s_location" .Host $trimmed_path)) }}
+			include {{ printf "/etc/nginx/vhost.d/%s_%s_location" .Host $trimmed_path}};
+		{{ else if (exists "/etc/nginx/vhost.d/default_location") }}
+			include /etc/nginx/vhost.d/default_location;
+		{{ end }}
 	{{ end }}
 	}
 {{ end }}
 
 {{ define "upstream-definition" }}
 	{{ $knownNetworksName := groupByKeys  .Networks "Name"}}
-	
+
 	upstream {{ .Upstream }} {
 		{{ range $container := .Containers }}
 			{{ $addrLen := len $container.Addresses }}
@@ -318,12 +329,12 @@ server {
 		{{ range $path, $containers := $paths }}
 			{{ $sum := sha1 $path }}
 			{{ $upstream := printf "%s-%s" $host $sum }}
-			
+
 			{{ $container := index $containers 0}}
 			{{ $pathDest := $container.Env.VIRTUAL_PATH_DEST }}
-			
+
 			{{ template "location" (dict "Path" $path "Proto" $proto "Upstream" $upstream "Host" $host "Vhostroot" $vhost_root "PathDest" $pathDest) }}
-			
+
 		{{ end }}
 	{{ end }}
 }
@@ -357,7 +368,7 @@ server {
 		{{ range $path, $containers := $paths }}
 			{{ $sum := sha1 $path }}
 			{{ $upstream := printf "%s-%s" $upstream_name $sum }}
-			
+
 			{{ $container := index $containers 0}}
 			{{ $pathDest := $container.Env.VIRTUAL_PATH_DEST }}
 
